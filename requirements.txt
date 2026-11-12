@@ -1,0 +1,8 @@
+# Runtime dependencies. Pinned for repeatable builds; run the dependency / licence scan before installing.
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+pydantic-settings==2.9.1
+sqlalchemy==2.0.41
+psycopg[binary]==3.3.7
+pyjwt[crypto]==2.10.1
+python-multipart==0.0.20
