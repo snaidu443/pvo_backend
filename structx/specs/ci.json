@@ -1,0 +1,112 @@
+{
+  "name": "ci",
+  "description": "a competitive intelligence (CI) deck about competitor products (other companies' assets) in a therapeutic area. Every record is about ONE competitor product, named exactly as in the competitors list. Give at most one record per competitor product and indication: the one that best answers the field. Include a record only when the file states its value. When a date or status is stated for a competitor product as a whole rather than for one of its indications, give the record with indication null",
+  "primary_key": {
+    "list": "competitors",
+    "key": "competitor",
+    "null_when": "the file states it for every competitor product at once (rare: prefer one record per competitor)"
+  },
+  "aliases": {
+    "LR": "lower-risk",
+    "HR": "high-risk",
+    "TD": "transfusion-dependent",
+    "NTD": "non-transfusion-dependent",
+    "MDS": "myelodysplastic syndromes",
+    "MF": "myelofibrosis",
+    "HTB": "high transfusion burden",
+    "AML": "acute myeloid leukemia",
+    "SCD": "sickle cell disease",
+    "1L": "first-line",
+    "2L": "second-line"
+  },
+  "fields": [
+    {
+      "id": "competitors",
+      "kind": "list",
+      "workbook_input": "Input Fields 20261110.xlsm / Competitor Inputs rows 5-14: Competitor Inputs (one competitor per column)",
+      "description": "Every competitor product the file covers, one per entry: the product's name as written (brand name, or INN / code name when there is no brand), followed by its company in brackets when the file states it, e.g. 'Brandname (Company)'. Not the company's own asset the deck is written for, and not a drug class."
+    },
+    {
+      "id": "phase_of_development",
+      "kind": "records",
+      "per_key": "many",
+      "workbook_input": "Input Fields 20261110.xlsm / Competitor Inputs row 5: Phase of Development (competitor, per indication; optional; options Pre-clinical, Phase I, Phase II, Phase III, Launched)",
+      "description": "The CURRENT development phase of each competitor product in each indication the file covers it for: one record per competitor product and indication. Prefer a phase the file states as current for that indication (a pipeline table, a competitor profile, a landscape chart). A product approved, marketed or launched in the indication is Launched. Otherwise the phase of its most advanced ongoing or completed study in that indication counts -- not studies still planned (use start dates and labels such as 'planned', 'ongoing', 'completed'); cite that study's row.",
+      "fields": [
+        {
+          "id": "competitor",
+          "description": "Primary key: the competitor product this record is about, matched by code to the competitors list (this text is not sent)."
+        },
+        {
+          "id": "indication",
+          "description": "The indication this phase is for, as written, with population qualifiers (e.g. line of therapy, severity, age group); null only if the file states the phase for the product as a whole. If a list of the asset's indications is given as categories, set option to the one this indication corresponds to -- the nearest one when the match is approximate (a broader or narrower population, a different line of therapy or age group); label it medium when approximate and low when loose, and say in label_reason what differs. Leave option null only when no listed indication is related at all."
+        },
+        {
+          "id": "phase",
+          "description": "The phase as written (e.g. 'Phase 2b', 'Ph3', 'Pre-clinical', 'Approved', 'Launched'). Category: Phase 1/1a/1b -> Phase I, Phase 2/2a/2b -> Phase II, Phase 3 -> Phase III, approved/marketed/launched -> Launched, pre-clinical/IND-enabling -> Pre-clinical.",
+          "options": [
+            "Pre-clinical",
+            "Phase I",
+            "Phase II",
+            "Phase III",
+            "Launched"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "us_regulatory_approval_timing",
+      "kind": "records",
+      "per_key": "many",
+      "workbook_input": "Input Fields 20261110.xlsm / Competitor Inputs row 14: Expected USA Regulatory Approval Timing (competitor, per indication; optional; year)",
+      "description": "The expected -- or, if it has already happened, the actual -- US FDA approval date of each competitor product in each indication the file gives one for: one record per competitor product and indication. If the file gives only a US submission (NDA/BLA filing) or PDUFA date for that indication, give that and say so in milestone. Not EU or other ex-US dates.",
+      "fields": [
+        {
+          "id": "competitor",
+          "description": "Primary key: the competitor product this record is about, matched by code to the competitors list (this text is not sent)."
+        },
+        {
+          "id": "indication",
+          "description": "The indication the date is for, as written; null only if the file states it for the product as a whole. If a list of the asset's indications is given as categories, set option to the one this indication corresponds to -- the nearest one when the match is approximate (a broader or narrower population, a different line of therapy or age group); label it medium when approximate and low when loose, and say in label_reason what differs. Leave option null only when no listed indication is related at all."
+        },
+        {
+          "id": "milestone",
+          "description": "What the date is for, as written: e.g. 'FDA approval', 'approved', 'PDUFA', 'US launch', or 'BLA submission' if that is all the file gives."
+        },
+        {
+          "id": "timing",
+          "type": "date",
+          "parts": ["year"],
+          "description": "The date as written (e.g. 'Q2 2027', 'Mar 2028', '2029', 'Approved Jun 2024')."
+        }
+      ]
+    },
+    {
+      "id": "us_generic_entry_timing",
+      "kind": "records",
+      "per_key": "many",
+      "workbook_input": "Input Fields 20261110.xlsm / Competitor Inputs row 9: Expected Date of Generic / Biosimilar Entry in USA (competitor, per indication; optional; year; 'CI deck or manual')",
+      "description": "The expected date of generic or biosimilar entry in the USA for each competitor product: loss of exclusivity (LOE), US patent or exclusivity expiry, or an expected generic/biosimilar launch date. Usually stated for the product as a whole: then indication null. Not ex-US dates.",
+      "fields": [
+        {
+          "id": "competitor",
+          "description": "Primary key: the competitor product this record is about, matched by code to the competitors list (this text is not sent)."
+        },
+        {
+          "id": "indication",
+          "description": "The indication the date is for, as written; null when the file states it for the product as a whole (the usual case). If a list of the asset's indications is given as categories, set option to the one this indication corresponds to -- the nearest one when the match is approximate (a broader or narrower population, a different line of therapy or age group); label it medium when approximate and low when loose, and say in label_reason what differs. Leave option null only when no listed indication is related at all."
+        },
+        {
+          "id": "basis",
+          "description": "What the date is, as written: e.g. 'LOE', 'US patent expiry', 'biosimilar entry', 'generic launch expected'."
+        },
+        {
+          "id": "timing",
+          "type": "date",
+          "parts": ["year"],
+          "description": "The date as written (e.g. '2031', 'H2 2032', 'Q1 2030')."
+        }
+      ]
+    }
+  ]
+}

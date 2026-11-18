@@ -1,0 +1,192 @@
+{
+  "name": "cdp",
+  "description": "a drug program's clinical development plan (CDP) slide deck. Give at most one record per indication: the one that best answers the field. Include a record only when the file states its value. When a date or status is stated for the program/asset as a whole rather than for one indication, give one record with indication null",
+  "primary_key": {
+    "list": "indications",
+    "key": "indication"
+  },
+  "fields": [
+    {
+      "id": "indications",
+      "kind": "list",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 27: Indications (asset level; required)",
+      "description": "Every indication in scope for the asset -- lead and follow-on, one per entry, with population qualifiers as written (e.g. severity, line of therapy, age group)."
+    },
+    {
+      "id": "phase_of_development",
+      "kind": "records",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 5: Phase of Development (per indication; required; options Pre-clinical, Phase I, Phase II, Phase II/III, Phase III)",
+      "description": "The CURRENT development phase of each indication. Prefer a phase the file states as current for the indication. Otherwise a CDP usually states phases per study (e.g. a studies table: 'Study X | Phase 3 | Indication Y | first patient Q2 2028'): the phase of a study counts for the indication it studies, but only studies that are ongoing or completed -- not ones still planned for the future (use start dates and labels such as 'planned', 'ongoing', 'completed'); when several qualify, give the most advanced and cite that study's row. If the file doesn't make clear which studies have started, give the earliest-starting study's phase and cite that row.",
+      "fields": [
+        {
+          "id": "indication",
+          "description": "Primary key: the indication this record is about, matched by code to the indications list, or null for the whole program (this text is not sent)."
+        },
+        {
+          "id": "phase",
+          "description": "The phase as written (e.g. 'Phase 2b', 'Ph3', 'Pre-clinical', 'seamless Phase 2/3', 'Launched'). Category: Phase 1/1a/1b -> Phase I, Phase 2/2a/2b -> Phase II, Phase 2/3, 2b/3 or a seamless/adaptive phase 2-3 study -> Phase II/III, Phase 3/3b -> Phase III, pre-clinical/IND-enabling -> Pre-clinical. An indication already approved, marketed or launched has no category: leave option null and keep the wording in value.",
+          "options": [
+            "Pre-clinical",
+            "Phase I",
+            "Phase II",
+            "Phase II/III",
+            "Phase III"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "us_fda_submission_timing",
+      "kind": "records",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 28: US FDA Submission Timing (per indication; optional; year and month)",
+      "description": "The expected US regulatory submission date of each indication: the NDA or BLA filing/submission to the FDA (also 'US filing', 'sNDA/sBLA submission', 'rolling submission complete'). Only submission dates: a US approval, PDUFA or launch date belongs to us_fda_approval_timing or us_launch_timing, not here; if the file gives no US submission date for an indication, give no record for it.",
+      "fields": [
+        {
+          "id": "indication",
+          "description": "Primary key: the indication this record is about, matched by code to the indications list, or null for the whole program (this text is not sent)."
+        },
+        {
+          "id": "milestone",
+          "description": "What the date is for, as written: e.g. 'NDA submission', 'BLA filing', 'sBLA submission', 'US filing'."
+        },
+        {
+          "id": "timing",
+          "type": "date",
+          "parts": ["year", "month"],
+          "description": "The date as written (e.g. 'Mar 2031', 'Q4 2030', '2H 2029')."
+        }
+      ]
+    },
+    {
+      "id": "us_fda_approval_timing",
+      "kind": "records",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 30: US FDA Approval Timing (per indication; optional; year and month)",
+      "description": "The expected US FDA approval date of each indication: 'FDA approval', 'US approval', 'PDUFA date' or 'action date' (a PDUFA/action date is the expected approval date). Only approval dates: a submission/filing date belongs to us_fda_submission_timing and a launch date to us_launch_timing, not here; if the file gives no US approval date for an indication, give no record for it.",
+      "fields": [
+        {
+          "id": "indication",
+          "description": "Primary key: the indication this record is about, matched by code to the indications list, or null for the whole program (this text is not sent)."
+        },
+        {
+          "id": "milestone",
+          "description": "What the date is for, as written: e.g. 'FDA approval', 'US approval', 'PDUFA'."
+        },
+        {
+          "id": "timing",
+          "type": "date",
+          "parts": ["year", "month"],
+          "description": "The date as written (e.g. 'Mar 2031', 'Q4 2030', '2H 2029')."
+        }
+      ]
+    },
+    {
+      "id": "us_launch_timing",
+      "kind": "records",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 32: US Launch Timing (per indication; required; year and month)",
+      "description": "The expected US launch date of each indication: 'US launch', 'first launch (US)', 'commercial launch US', 'US availability'. Only launch dates: a submission/filing date belongs to us_fda_submission_timing and an approval or PDUFA date to us_fda_approval_timing, not here; if the file gives no US launch date for an indication, give no record for it.",
+      "fields": [
+        {
+          "id": "indication",
+          "description": "Primary key: the indication this record is about, matched by code to the indications list, or null for the whole program (this text is not sent)."
+        },
+        {
+          "id": "milestone",
+          "description": "What the date is for, as written: e.g. 'US launch', '1st launch (US)', 'commercial launch'."
+        },
+        {
+          "id": "timing",
+          "type": "date",
+          "parts": ["year", "month"],
+          "description": "The date as written (e.g. 'Mar 2031', 'Q4 2030', '2H 2029')."
+        }
+      ]
+    },
+    {
+      "id": "eu_maa_submission_timing",
+      "kind": "records",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 29: EU MAA Submission Timing (per indication; required; year and month; 'clarify whether the product will pursue an MAA in the EU and, if so, the assumed submission timing')",
+      "description": "Whether an EU Marketing Authorisation Application (MAA, the EMA submission) is planned for each indication and when it is to be submitted. Only the MAA submission: an EU approval, CHMP opinion or EU launch date belongs to eu_ema_approval_timing or eu_launch_timing, not here. Give a record when the file states a submission date, or states that no EU MAA is planned.",
+      "fields": [
+        {
+          "id": "indication",
+          "description": "Primary key: the indication this record is about, matched by code to the indications list, or null for the whole program (this text is not sent)."
+        },
+        {
+          "id": "pursuing_maa",
+          "description": "Whether an EU MAA is planned, as the file states it (e.g. 'EU MAA', 'MAA submission', 'not planned', 'EU not in scope')."
+        },
+        {
+          "id": "submission_timing",
+          "type": "date",
+          "parts": ["year", "month"],
+          "description": "The planned MAA submission date as written (e.g. 'Q1 2031', 'Mar 2031'); null if not pursuing or no date is stated."
+        }
+      ]
+    },
+    {
+      "id": "eu_ema_approval_timing",
+      "kind": "records",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 31: EU EMA Approval Timing (per indication; required; year)",
+      "description": "The expected EU regulatory approval date of each indication: 'EC approval', 'EMA approval', 'EU approval', or the 'CHMP opinion' if that is the only EU approval milestone given (say so in milestone). Only approval dates: the MAA submission date belongs to eu_maa_submission_timing and an EU launch date to eu_launch_timing, not here; if the file gives no EU approval date for an indication, give no record for it.",
+      "fields": [
+        {
+          "id": "indication",
+          "description": "Primary key: the indication this record is about, matched by code to the indications list, or null for the whole program (this text is not sent)."
+        },
+        {
+          "id": "milestone",
+          "description": "What the date is for, as written: e.g. 'EC approval', 'EU approval', 'CHMP opinion'."
+        },
+        {
+          "id": "timing",
+          "type": "date",
+          "parts": ["year"],
+          "description": "The date as written (e.g. 'H2 2031', '2032', 'Q1 2033')."
+        }
+      ]
+    },
+    {
+      "id": "eu_launch_timing",
+      "kind": "records",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 33: EU Launch Timing (per indication; required; year)",
+      "description": "The expected EU launch date of each indication: 'EU launch', 'first EU launch', 'launch (EU5)', 'EU availability'. Only launch dates: the MAA submission belongs to eu_maa_submission_timing and an EU approval or CHMP date to eu_ema_approval_timing, not here; if the file gives no EU launch date for an indication, give no record for it.",
+      "fields": [
+        {
+          "id": "indication",
+          "description": "Primary key: the indication this record is about, matched by code to the indications list, or null for the whole program (this text is not sent)."
+        },
+        {
+          "id": "milestone",
+          "description": "What the date is for, as written: e.g. 'EU launch', 'first launch (Germany)', 'EU5 launch'."
+        },
+        {
+          "id": "timing",
+          "type": "date",
+          "parts": ["year"],
+          "description": "The date as written (e.g. 'H2 2031', '2032', 'Q1 2033')."
+        }
+      ]
+    },
+    {
+      "id": "mode_of_administration_medicare_coverage",
+      "kind": "records",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 35: Mode of Administration & Medicare Coverage (asset level; required; options Inpatient (Medicare Part B), Outpatient, HCP-administered (Medicare Part B), Outpatient, patient-administered (Medicare Part D))",
+      "description": "How the product is administered and in what setting, which decides its expected US Medicare coverage: usually stated once for the product (route, formulation, dosing: e.g. 'oral once daily', 'IV infusion every 3 weeks', 'SC injection, self-administered', 'autologous cell therapy infused in hospital'). Give one record with indication null when the file states it for the product as a whole; per indication only when the route or setting differs between indications. Category: administered during a hospital admission (e.g. a CAR-T or gene therapy infusion with inpatient monitoring, surgery) -> Inpatient (Medicare Part B); an infusion or injection given by a healthcare professional in a clinic, infusion centre or physician's office -> Outpatient, HCP-administered (Medicare Part B); an oral, inhaled, topical or self-injected product the patient takes at home -> Outpatient, patient-administered (Medicare Part D). Leave option null when the file gives the route but not enough to tell the setting (e.g. 'SC injection' without saying who administers it).",
+      "fields": [
+        {
+          "id": "indication",
+          "description": "Primary key: the indication this record is about, matched by code to the indications list, or null for the whole program (this text is not sent)."
+        },
+        {
+          "id": "administration",
+          "description": "The route, formulation, dosing schedule and setting as written (e.g. 'oral tablet once daily', 'IV infusion q3w in the outpatient clinic', 'single inpatient infusion').",
+          "options": [
+            "Inpatient (Medicare Part B)",
+            "Outpatient, HCP-administered (Medicare Part B)",
+            "Outpatient, patient-administered (Medicare Part D)"
+          ]
+        }
+      ]
+    }
+  ]
+}

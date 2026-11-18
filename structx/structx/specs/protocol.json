@@ -1,0 +1,177 @@
+{
+  "name": "protocol",
+  "description": "a trial protocol concept sheet (a protocol synopsis) for a drug program: the study's title and number, objectives, design, arms and comparator, blinding, randomization and stratification, population (inclusion and exclusion criteria), endpoints, subgroup analyses and sample size. Every record is about ONE study, named exactly as in the studies list, and names the indication (the patient population) that study or cohort is for. Give at most one record per study and indication: the one that best answers the field. Include a record only when the file states its value. When the sheet states something for all its studies at once rather than for one study, give the record with study null",
+  "primary_key": {
+    "list": "studies",
+    "key": "study",
+    "null_when": "the sheet states it for every study at once (rare: prefer one record per study)"
+  },
+  "fields": [
+    {
+      "id": "studies",
+      "kind": "list",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs rows 37-42 are per indication; the sheet itself is per study, so the study is the key and each record names its indication",
+      "description": "Every study the sheet describes, one per entry, named by its study number alone when it has one (e.g. 'TAK-000-3001', 'SYN-301' -- not 'Study SYN-301'), else by its name as written (e.g. 'the Phase 3 PIVOT study'); a concept sheet usually describes one. Not the studies it only refers to (prior or supporting trials)."
+    },
+    {
+      "id": "clinical_trial_comparator_design",
+      "kind": "records",
+      "per_key": "many",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 37: Clinical Trial Comparator Design (per indication; required; options Head-to-head, placebo-controlled, single-arm study; 'clarify whether the clinical trial's comparator is optimized')",
+      "description": "The design of each study, per indication it is for: what the investigational arm is compared with. Category: an active comparator arm (an approved drug, standard of care, best available therapy, investigator's choice) -> Head-to-head, even if a placebo is also used; placebo or sham as the only control -> Placebo-controlled; no control arm (single-arm, open-label with no comparator, dose-escalation) -> Single-arm study.",
+      "fields": [
+        {
+          "id": "study",
+          "description": "Primary key: the study this record is about, matched by code to the studies list, or null when stated for every study at once (this text is not sent)."
+        },
+        {
+          "id": "indication",
+          "description": "The indication (patient population) this study or cohort is for, as written in the sheet, with its qualifiers (severity, risk group, line of therapy, prior treatment, age group). If a list of the asset's indications is given as categories, set option to the one this indication corresponds to -- the nearest one when the match is approximate (a broader or narrower population, a different line of therapy or age group); label it medium when approximate and low when loose, and say in label_reason what differs. Leave option null only when no listed indication is related at all."
+        },
+        {
+          "id": "design",
+          "description": "The design as written (e.g. 'randomized, double-blind, placebo-controlled', 'open-label single-arm', 'randomized vs. best available therapy'), including the arms and randomization ratio when stated.",
+          "options": [
+            "Head-to-head",
+            "Placebo-controlled",
+            "Single-arm study"
+          ]
+        },
+        {
+          "id": "comparator",
+          "description": "The control arm as written (e.g. 'placebo', 'luspatercept', 'best available therapy per investigator'); null when the study has no control arm."
+        }
+      ]
+    },
+    {
+      "id": "clinical_trial_comparator_type",
+      "kind": "records",
+      "per_key": "many",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 38: Clinical Trial Comparator Type (per indication; conditional: required if the comparator design is head-to-head; 'select all that applies': Fixed active comparator / treatment, Investigator's treatment choice (specify), Best supportive care, Best available therapy). The spec takes one category per record: the comparator the control arm is defined by; several comparators stay in the value as written",
+      "description": "The kind of active comparator each study uses, per indication it is for: only for studies with an active control arm (give no record for a placebo-only or single-arm study). Category: one named drug or regimen every control patient receives (e.g. 'luspatercept', 'docetaxel', 'standard chemotherapy X') -> Fixed active comparator / treatment; the investigator picks each control patient's treatment from a list or at discretion ('investigator's choice', 'physician's choice') -> Investigator's treatment choice; supportive or palliative care only, no disease-directed therapy (transfusions, growth factors, symptom control) -> Best supportive care; the best therapy available to the patient, chosen per patient but disease-directed ('best available therapy', 'BAT') -> Best available therapy. When the control arm combines several (e.g. investigator's choice of BAT), choose the one the sheet names the arm by and keep the full wording in value.",
+      "fields": [
+        {
+          "id": "study",
+          "description": "Primary key: the study this record is about, matched by code to the studies list, or null when stated for every study at once (this text is not sent)."
+        },
+        {
+          "id": "indication",
+          "description": "The indication (patient population) this study or cohort is for, as written in the sheet, with its qualifiers (severity, risk group, line of therapy, prior treatment, age group). If a list of the asset's indications is given as categories, set option to the one this indication corresponds to -- the nearest one when the match is approximate (a broader or narrower population, a different line of therapy or age group); label it medium when approximate and low when loose, and say in label_reason what differs. Leave option null only when no listed indication is related at all."
+        },
+        {
+          "id": "comparator_type",
+          "description": "The control arm's treatment as written, including the list the investigator chooses from when there is one (e.g. 'investigator's choice of danazol, lenalidomide or luspatercept', 'best supportive care including RBC transfusions and ESAs').",
+          "options": [
+            "Fixed active comparator / treatment",
+            "Investigator's treatment choice",
+            "Best supportive care",
+            "Best available therapy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clinical_trial_blinding",
+      "kind": "records",
+      "per_key": "many",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 39: Clinical Trial Blinding (per indication; optional; options Open-label, single-blind, double-blind)",
+      "description": "The blinding of each study, per indication it is for. Category: neither participants nor investigators are blinded ('open-label', 'unblinded') -> Open-label; only one party is blinded (participants only, or an assessor-/observer-blinded or 'sponsor-blind' open-label study) -> Single-blind; participants and investigators both blinded ('double-blind', 'double-blind, double-dummy', 'triple-blind') -> Double-blind. Null when the sheet says nothing about blinding.",
+      "fields": [
+        {
+          "id": "study",
+          "description": "Primary key: the study this record is about, matched by code to the studies list, or null when stated for every study at once (this text is not sent)."
+        },
+        {
+          "id": "indication",
+          "description": "The indication (patient population) this study or cohort is for, as written in the sheet, with its qualifiers (severity, risk group, line of therapy, prior treatment, age group). If a list of the asset's indications is given as categories, set option to the one this indication corresponds to -- the nearest one when the match is approximate (a broader or narrower population, a different line of therapy or age group); label it medium when approximate and low when loose, and say in label_reason what differs. Leave option null only when no listed indication is related at all."
+        },
+        {
+          "id": "blinding",
+          "description": "The blinding as written (e.g. 'randomized, double-blind, placebo-controlled', 'open-label', 'blinded independent central review with open-label treatment').",
+          "options": [
+            "Open-label",
+            "Single-blind",
+            "Double-blind"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "alignment_of_stratification_factors",
+      "kind": "records",
+      "per_key": "many",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 40: Alignment of Stratification Factors (per indication; optional; options Yes, No, Not Applicable; 'clarify whether the trial design includes subgroup stratification factors that aligns with EU clinical guidelines on PICO subpopulations'). The model reports what the sheet stratifies on; whether those factors match the EU PICO subpopulations is the reviewer's judgement",
+      "description": "Whether each study's randomization is stratified by clinical subpopulation factors, per indication it is for. Category: Yes when the sheet lists stratification factors that define patient subpopulations (e.g. disease risk group or stage, line of therapy or prior treatment, transfusion burden, biomarker or mutation status, age band, baseline severity); No when the study is randomized but the sheet lists no stratification factors, or only operational ones (site, region, country); Not Applicable when the study is not randomized (single-arm, dose-escalation). Null when the sheet does not say whether the study is randomized.",
+      "fields": [
+        {
+          "id": "study",
+          "description": "Primary key: the study this record is about, matched by code to the studies list, or null when stated for every study at once (this text is not sent)."
+        },
+        {
+          "id": "indication",
+          "description": "The indication (patient population) this study or cohort is for, as written in the sheet, with its qualifiers (severity, risk group, line of therapy, prior treatment, age group). If a list of the asset's indications is given as categories, set option to the one this indication corresponds to -- the nearest one when the match is approximate (a broader or narrower population, a different line of therapy or age group); label it medium when approximate and low when loose, and say in label_reason what differs. Leave option null only when no listed indication is related at all."
+        },
+        {
+          "id": "stratification",
+          "description": "The stratification factors as written (e.g. 'stratified by IPSS-R risk category, transfusion burden (HTB vs LTB) and region'), or the sheet's statement that the study is single-arm / not randomized.",
+          "options": [
+            "Yes",
+            "No",
+            "Not Applicable"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "subgroup_endpoints",
+      "kind": "records",
+      "per_key": "many",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 41: Subgroup Endpoints (per indication; optional; options Yes, No, Not Applicable; 'clarify whether subgroup endpoints are statistically powered to align with EU clinical guidelines on PICO subpopulations'). The model reports what the sheet powers; whether those subgroups match the EU PICO subpopulations is the reviewer's judgement",
+      "description": "Whether each study plans subgroup analyses with statistical power of their own, per indication it is for. Category: Yes when the sheet states that an endpoint is tested or powered within a subgroup (a co-primary or key secondary endpoint in a subpopulation, a sample size or alpha allocated to a subgroup, hierarchical testing that includes a subgroup); No when subgroup analyses are planned only as exploratory, descriptive or sensitivity analyses, or when the sheet lists none; Not Applicable when the sheet states that subgroup analyses are not planned or not applicable to the design. Null when the sheet says nothing about subgroups or the statistical analysis.",
+      "fields": [
+        {
+          "id": "study",
+          "description": "Primary key: the study this record is about, matched by code to the studies list, or null when stated for every study at once (this text is not sent)."
+        },
+        {
+          "id": "indication",
+          "description": "The indication (patient population) this study or cohort is for, as written in the sheet, with its qualifiers (severity, risk group, line of therapy, prior treatment, age group). If a list of the asset's indications is given as categories, set option to the one this indication corresponds to -- the nearest one when the match is approximate (a broader or narrower population, a different line of therapy or age group); label it medium when approximate and low when loose, and say in label_reason what differs. Leave option null only when no listed indication is related at all."
+        },
+        {
+          "id": "subgroups",
+          "description": "The subgroup analyses and their statistical treatment as written (e.g. 'the primary endpoint will also be tested in the HTB subgroup at alpha 0.025', 'subgroup analyses by region and age are exploratory').",
+          "options": [
+            "Yes",
+            "No",
+            "Not Applicable"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "patient_centered_outcomes",
+      "kind": "records",
+      "per_key": "many",
+      "workbook_input": "Input Fields 20261102.xlsm / Takeda Asset Inputs row 42: Patient-Centered Outcomes (per indication; optional; options Yes, No; 'clarify whether the trial contains patient-relevant endpoints (e.g., OS) and patient reported outcomes (e.g., QOL) with statistical power allocated')",
+      "description": "Whether each study's powered endpoints include patient-centred ones, per indication it is for. Patient-centred endpoints are outcomes the patient experiences directly: mortality or survival (e.g. overall survival), morbidity and clinical events (e.g. hospitalisation, fractures, transfusions received), symptoms, and health-related quality of life or patient-reported outcomes (e.g. FACT-An, EORTC QLQ-C30, SF-36). Response rates, progression-free survival, biomarker or laboratory changes (e.g. haemoglobin level) and pharmacokinetics are not. Category: Yes when at least one primary or key secondary endpoint (the endpoints the sample size or the hierarchical testing covers) is patient-centred; No when every such endpoint is a surrogate, response or laboratory measure, even if a patient-reported outcome is collected only as an exploratory endpoint; null when the sheet lists no endpoints.",
+      "fields": [
+        {
+          "id": "study",
+          "description": "Primary key: the study this record is about, matched by code to the studies list, or null when stated for every study at once (this text is not sent)."
+        },
+        {
+          "id": "indication",
+          "description": "The indication (patient population) this study or cohort is for, as written in the sheet, with its qualifiers (severity, risk group, line of therapy, prior treatment, age group). If a list of the asset's indications is given as categories, set option to the one this indication corresponds to -- the nearest one when the match is approximate (a broader or narrower population, a different line of therapy or age group); label it medium when approximate and low when loose, and say in label_reason what differs. Leave option null only when no listed indication is related at all."
+        },
+        {
+          "id": "endpoints",
+          "description": "The primary endpoint(s) and the key secondary endpoints as written, primary first, with the patient-reported ones and their statistical treatment when stated (e.g. 'Primary: RBC transfusion independence >= 8 weeks; key secondary: change in FACT-An score (powered), overall survival').",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    }
+  ]
+}
