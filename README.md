@@ -1,191 +1,330 @@
-# PVO backend (FastAPI)
+# The database
 
-The REST API behind the Policy Value Optimizer React app (`Global_Policy_Re`). Every path, request and
-response matches `src/api/endpoints.ts` and `src/types/domain.ts` in the React app. When the React app
-is built with `PVO_DATA_SOURCE=api`, it talks to this service instead of its built-in mock data.
+`db/structx.sqlite` (git-ignored) is the one SQLite file the API and the UI share. Its path comes from `STRUCTX_DATABASE_URL` in `.env` (default `sqlite:///db/structx.sqlite`, relative to the project folder). Create or reset it with:
 
-## 1. How the code is organised
-
-```
-pvo_backend/
-├── app/
-│   ├── main.py          # creates the app: routers, size limit, security headers, safe errors
-│   ├── config.py        # settings from env vars (PVO_*) or .env; refuses unsafe config outside local
-│   ├── database.py      # SQLAlchemy engine + one DB session per request
-│   ├── models.py        # tables
-│   ├── schemas.py       # request validation (mirrors the React types)
-│   ├── security.py      # Okta token check + signed-in user + role checks
-│   ├── permissions.py   # "may this user use this asset?" + audit helper
-│   ├── storage.py       # uploaded files: local folder or private S3 bucket (same interface)
-│   ├── files.py         # upload checks: allowed formats per slot, real file type, size, SHA-256
-│   ├── extraction.py    # extraction jobs + malware-scan results
-│   └── routers/         # one file per area of the React app
-│       ├── auth.py        /auth/me, /auth/logout
-│       ├── catalog.py     /reference, /policy-versions, /policy-deltas, /rules, /decision-traces, /policy-monitoring
-│       ├── submissions.py /assets/submissions, /assets/{id}/extract/{jobId|latest|retry}  (docs/DATA_SUBMISSION_API.md)
-│       ├── assets.py      /assets (list, create, save, delete)
-│       ├── documents.py   /documents, /assets/{id}/documents (upload), /documents/{id}/download
-│       ├── inputs.py      /fields, /questions (+ per-asset replace)
-│       ├── assessment.py  /assets/{id}/eligibility/run, impact/run, extract, scenarios
-│       ├── users.py       /users (+ invite)
-│       ├── activity.py    /activity, /copilot/ask
-│       └── health.py      /health/live, /health/ready  (for Kubernetes)
-├── scripts/seed.py      # creates tables + loads the React mock JSON (synthetic data)
-├── scripts/upgrade_local_db.py  # adds new columns to an existing local SQLite file (backs it up first)
-├── tests/               # pytest: auth, permissions, main flows
-├── Dockerfile
-├── requirements.txt / requirements-dev.txt
-└── .env.example
-```
-
-**A request goes through these layers:**
-`router` → `security.get_current_user` (Okta token valid? user active?) → `permissions.get_asset_for`
-(may this user use this asset?) → `schemas` (body valid?) → `models` (database) → JSON response in the React shape.
-
-**Storage design (kept simple on purpose).** Columns the API filters or authorizes on are real columns:
-ids, `asset_id`, `role`, `status`, `email`. The rest of each React object is stored as JSON (`data` column,
-JSONB on Postgres/Lakebase). So the API returns exactly what the React app expects, and DE can split
-more columns out later (for example for reporting) without changing the API.
-
-| Table | Holds |
-|---|---|
-| `users`, `user_asset_access` | users, roles, and which assets each user may see |
-| `assets` | the Asset object, including the assessment workspace (`aia`, incl. 15-year `revenue`) |
-| `documents`, `extracted_fields`, `judgment_questions`, `decision_traces`, `saved_scenarios` | per-asset data (`documents` also holds where each file is stored and its scan status) |
-| `extraction_jobs` | one row per "Extract data with AI" run (queued → waiting_for_scan → running → done / failed) |
-| `assessment_runs` | eligibility / impact / extraction requests |
-| `activity` | the recent-activity feed shown in the UI |
-| `audit_log` | server-side record of every write (who, what, which id) |
-| `catalog` | read-only data loaded by DE: reference, policyVersions, policyDeltas, rules, policyMonitoring |
-
-## 2. Security rules built in
-
-- **Sign-in is Okta only.** Every `/api` route needs a valid Okta access token. The token's signature
-  is checked against Okta's keys (JWKS, RS256 only), along with issuer, audience, expiry and the
-  `pvo.api` scope. The API never handles passwords.
-- **Roles come from the PVO database.** Okta proves who the user is. The `users` table decides their
-  role, and an unknown or inactive user gets 403. The first sign-in links the Okta account to the user
-  an Admin created, matched by email.
-- **Per-asset access on every request.** Admin sees all assets; everyone else only sees assets granted
-  in `user_asset_access`. A user without access gets 404, the same as for an asset that doesn't exist,
-  so asset ids can't be probed.
-- **Viewers are read-only** (403 on any write). Editors can invite only Editors and Viewers, and only to
-  their own assets. Admins can't lock themselves out.
-- **Policy refresh monitoring is Admin-only.** Other roles get an empty result (see the note in `catalog.py`).
-- **Every request body is validated.** Unknown keys are rejected and every string has a maximum length.
-  Requests are limited to 2 MB of JSON and 50 MB for uploads.
-- **Uploads are checked before saving.** The file type must be on the allowlist and the size is checked
-  while the file streams in. Files are stored under random names, so a crafted name can't escape the
-  folder, and they are marked `pending_scan` until the malware scan clears them.
-- **Database queries are parameterised** through SQLAlchemy only; SQL is never built from strings.
-- **Errors never expose internals:** no stack traces and no echoed input. Every response carries an
-  `X-Request-ID` for support. Tokens and question text are never logged.
-- **Unsafe configuration stops the app from starting** outside `local`: a missing Okta setting, CORS
-  `*`, or SQLite in prod.
-
-## 3. Step by step: run it locally
-
-> Use **Python 3.12 or 3.13**. The pinned packages may not have ready-made wheels for 3.14 yet.
-> **Before installing:** run your dependency / licence scan on `requirements*.txt` (as agreed).
-
-**Step 1. Create a virtual environment and install packages**
 ```powershell
-cd "C:\Users\<you>\OneDrive - TRINITY PARTNERS LLC\Takeda\pvo_backend"
-py -3.12 -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements-dev.txt
+python db\init_db.py              # create if missing, verify the schema if present
+python db\init_db.py --fresh      # delete and recreate (every asset's rows are lost)
+python db\init_db.py --seed-demo  # also insert the mock's six synthetic demo users (empty user table only)
 ```
 
-**Step 2. Configure**
-```powershell
-copy .env.example .env
+The server (`api/main.py`) does the same on start. The schema is generated by `structx.join.database.ddl()` from `structx/specs/cdp.json`, `ci.json` and `protocol.json`; the tracked copy is `docs/schema.sql` (regenerate with `python -m structx.join.database --write docs/schema.sql` after a spec change). An existing file whose tables lack a column of the current specs is refused at start-up: use `--fresh`.
+
+Conventions used throughout:
+
+- SQLite dialect. `INTEGER PRIMARY KEY` is the row id; for another engine replace it with that engine's identity column.
+- Timestamps (`*_at`) are ISO-8601 UTC text, e.g. `2026-11-11T09:30:00+00:00`.
+- Booleans (`include`, `required`, `can_*`, `macro_enabled`) are `INTEGER` 0 / 1.
+- JSON lives in `TEXT` columns (`citations`, `policies`, `accept`, `aliases`, `input_value.value`).
+- Confidence labels are the text `high` / `medium` / `low`, never a number.
+- Every extracted value comes as a group of four columns: `<field>`, `<field>_confidence`, `<field>_confidence_reason`, `<field>_citations` (see [The value columns](#the-value-columns)).
+
+## Overview
+
+| Group | Tables | Keyed by | Written by |
+|---|---|---|---|
+| Assets and extraction | `asset`, `indication`, `cdp`, `ci`, `protocol` | `asset_id` | the UI (asset, indications) and the extraction (`structx.join.database`) |
+| Users and access | `role`, `user`, `user_asset`, `session`, `audit_log` | `user_id` | the API's user routes (`structx.join.users`); `role` is seeded |
+| Documents | `file_type`, `document`, `document_file_type` | `asset_id` | the Data Submission page (`structx.join.documents`); `file_type` is seeded |
+| Inputs | `input`, `input_option`, `input_value` | catalogue, then `asset_id` | `input` / `input_option` seeded from `structx/specs/inputs.json`; `input_value` by extractions and users (`structx.join.inputs`) |
+
+Relationships:
+
 ```
-Fill in `PVO_OKTA_ISSUER` and `PVO_OKTA_AUDIENCE` from the Okta team. For a quick local start,
-`PVO_DATABASE_URL` can stay as SQLite.
-
-**Step 3. Create the tables and load the demo data** (synthetic data from the React app)
-```powershell
-python -m scripts.seed --mocks "..\Global_Policy_Re\src\mocks\data" --admin-email <your company email> --admin-name "<Your Name>"
+role ──< user ──< user_asset >── asset ──< indication ──< cdp
+          │                        │            │     ├──< ci
+          ├──< session             ├──< document ─< document_file_type >── file_type
+          └──< audit_log >─────────┤            │
+                                   └──< input_value >── input ──< input_option
+                                           (indication_id, document_id optional)
 ```
-This makes you an Admin. You're linked to your Okta account the first time you sign in.
 
-**Step 4. Start the API**
-```powershell
-uvicorn app.main:app --reload --port 8000
-```
-- **Live API docs:** http://localhost:8000/docs (local only; switched off in other environments)
-- **Health check:** http://localhost:8000/health/ready
+An extraction replaces one asset's `indication` / `cdp` / `ci` / `protocol` rows and copies their cells into `input_value`; it never touches another asset. The asset row itself (owner, grants, documents) survives a re-extraction.
 
-**Step 5. Run the tests**
-```powershell
-pytest
-```
-The tests use an in-memory database and a locally generated key that stands in for Okta. No network or
-Okta account is needed.
+## Assets and extraction
 
-**Step 6. Run React and the API together (local dev sign-in, until Okta is ready)**
+### `asset`
 
-1. In `pvo_backend/.env`, set:
-   ```
-   PVO_ENVIRONMENT=local
-   PVO_DEV_LOGIN=true
-   ```
-   The API refuses to start with `PVO_DEV_LOGIN=true` in any other environment. While it's on, Okta
-   tokens are not accepted.
-2. Start the API: `python -m uvicorn app.main:app --reload --port 8000`. The log shows a
-   "LOCAL DEV SIGN-IN IS ON" warning.
-3. In `Global_Policy_Re/.env.local`, set:
-   ```
-   PVO_DATA_SOURCE=api
-   PVO_API_BASE_URL=http://localhost:3000/api
-   ```
-4. Start React: `npm run dev`. The dev server forwards `/api` to `http://localhost:8000`, so there's
-   no CORS setup. Production works the same way behind CloudFront.
-5. Open http://localhost:3000 and sign in with the **email** of a seeded user. No password is needed:
-   - the `--admin-email` you passed to the seed, for Admin;
-   - any active user email in `src/mocks/data/users.json`, for Editor or Viewer.
+One row per asset the UI creates. `name` is the asset code the API addresses it by (`/assets/{asset}`).
 
-   The role and visible assets come from the API. The "View as" switch is hidden in API mode.
-
-To go back to the built-in mock data, set `PVO_DATA_SOURCE=mock` (or remove the line) and restart `npm run dev`.
-
-**When Okta is ready:** set `PVO_DEV_LOGIN=false` and fill in the Okta values. On the React side, replace
-the dev sign-in in `authService.login` with the Okta redirect. Then delete `app/devauth.py`.
-
-## 4. Step by step: Lakebase / Postgres and deployment
-
-1. **Database URL:** set `PVO_DATABASE_URL=postgresql+psycopg://<user>@<host>:5432/<db>?sslmode=require`.
-   It comes from AWS Secrets Manager through the Kubernetes Secret, never from git. The tables are
-   created by `scripts/seed.py` for dev/test; prod gets migrations (section 5).
-2. **Build the image:** `docker build -t pvo-api:<git-sha> .`, then scan it and push it to ECR.
-3. **Deploy:** run it on EKS as described in the deployment notes:
-   - 2+ pods behind the ALB under `/api`;
-   - probes on `/health/live` and `/health/ready`;
-   - `PVO_ENVIRONMENT=dev|test|prod`;
-   - Okta values in the ConfigMap, the database URL in the Secret.
-4. **Uploads:** set `PVO_STORAGE_BACKEND=s3` with the bucket, prefix and KMS key (see `docs/DATA_SUBMISSION_API.md`). Production refuses local storage.
-
-## 5. What is not done yet (next steps)
-
-| # | Item | Why / what to do |
+| Column | Type | Meaning |
 |---|---|---|
-| 1 | **React sign-in via Okta** | Today React's API mode uses the local-only dev sign-in (`/auth/dev-login`). Switch React to the Okta redirect and `/auth/me` (needs approval for the Okta SDK packages), then remove `app/devauth.py`. |
-| 2 | **Database migrations** | Tables are created with `create_all` for dev/test. Add Alembic before prod (new package, needs approval). |
-| 3 | **Lakebase login tokens** | If Lakebase uses short-lived OAuth tokens as passwords, add token refresh (`databricks-sdk`, needs approval). |
-| 4 | **File storage + malware scan** | `S3FileStorage` is written and tested with a stand-in client. Still needed: the approved `boto3` in `requirements.txt`, the bucket / KMS key / IAM role, and the scan-event consumer that calls `apply_scan_result`. |
-| 5 | **Okta assignment / invite emails** | `TODO(okta)` in `users.py`; agree the process with the Okta team. |
-| 6 | **AI extraction and PolicyPilot AI** | `/extract` records the request; `/copilot/ask` answers the suggested questions from the knowledge base only. |
-| 7 | **Engines on the server** | Eligibility and impact are calculated in the browser (React `src/engine`), so the run endpoints only record the request. Port the engines to Python if results must be server-verified. |
-| 8 | **Ids created by the browser** | Users (`max+1`) and new assets (`NEW-nnn`) get their ids in React. Two people adding at the same moment get a 409 ("refresh and try again"). Better: let the server assign them (small React change). |
-| 9 | **React: Viewer controls** | React lets Viewers change document labels and include/exclude indications, but the API makes Viewers read-only (403), so hide those controls for Viewers. (The draft-document timing in `extractData()` is fixed.) |
-| 10 | **Monitoring pill for non-Admins** | Non-Admins get empty findings from `/policy-monitoring`, so their header pill shows "Policy content current". Decide with the client whether Editors and Viewers should see the count. |
+| `asset_id` | INTEGER PK | Row id. |
+| `name` | TEXT, unique, not null | The asset code (e.g. `SYN-101`). |
+| `asset_name` | TEXT | Display name; defaults to the code. |
+| `stage` | TEXT | Free text set on the asset form (max 40 characters). |
+| `owner_user_id` | INTEGER → `user` | The owning user. |
+| `created_by` | INTEGER → `user` | Who created the asset. |
+| `created_at` | TEXT | Creation time. |
+| `updated_at` | TEXT | Last change to the row (form edit or extraction). |
+| `cdp_file` | TEXT | File name of the CDP deck of the last extraction; null until a run. |
+| `ci_file` | TEXT | File name of the CI deck of the last extraction, or null. |
+| `protocol_file` | TEXT | File name of the protocol concept sheet of the last extraction, or null. |
+| `model` | TEXT | The gateway model the extraction used. |
+| `extracted_at` | TEXT | When the last extraction ran. |
+| `seconds` | REAL | Wall-clock seconds of the last extraction. |
+| `aliases` | TEXT (JSON) | The abbreviation map (`{"LR": "lower-risk", ...}`) the join expanded when mapping CI / protocol records to indications; `{}` when none. |
 
-## 6. Before production
+### `indication`
 
-- **Scans:** run SAST (e.g. Bandit / Semgrep), a dependency scan (pip-audit or company tool), a
-  container image scan and DAST against the test environment.
-- **Human review:** have the code reviewed by the backend lead and CyberSecurity, especially
-  `security.py`, `permissions.py`, `documents.py` and `users.py`.
-- **Okta and network:** confirm the Okta settings with Takeda's Okta team, and the network path to
-  Databricks/Lakebase.
-- **Data:** keep using synthetic data until the data classification for real Takeda data is approved.
+One row per indication of the asset. `indication` is never null. The CDP extraction writes the rows with `source = cdp`; a user can add rows by hand (`source = user`), rename them, and untick extracted ones (an extracted indication is unticked, never deleted).
+
+| Column | Type | Meaning |
+|---|---|---|
+| `indication_id` | INTEGER PK | Row id; referenced by `cdp`, `ci`, `protocol` and `input_value`. |
+| `asset_id` | INTEGER → `asset`, not null | The asset. |
+| `indication` | TEXT, not null | The indication as the CDP states it, with population qualifiers (severity, line of therapy, age group). |
+| `include` | INTEGER, default 1 | 1 = considered in the analysis; 0 = unticked by a user. |
+| `source` | TEXT, default `cdp` | `cdp` from the extraction, `user` when added by hand. |
+| `position` | INTEGER | 1-based display order. |
+| `confidence` | TEXT | The extraction's label for the indication (null for user rows). |
+| `confidence_reason` | TEXT | Why that label (null for user rows). |
+| `citations` | TEXT (JSON) | Where the indication was cited from (null for user rows). |
+
+### `cdp`
+
+One row per indication: the asset's own values from the Clinical Development Plan deck. Column names are the keys of the extraction JSON.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `row_id` | INTEGER PK | Row id. |
+| `asset_id` | INTEGER → `asset`, not null | The asset. |
+| `indication_id` | INTEGER → `indication`, not null | The indication. |
+| `indication` | TEXT, not null | The indication name, repeated for readability. |
+| `phase_of_development` (+3) | TEXT | The current development phase of the indication: one of `Pre-clinical`, `Phase I`, `Phase II`, `Phase II/III`, `Phase III`; an approved indication has no category (the wording as written). |
+| `us_fda_submission_timing` (+3) | TEXT (JSON) | Expected US NDA / BLA submission date as `{"year", "month"}` (`month` null when the deck gave only a quarter). |
+| `us_fda_approval_timing` (+3) | TEXT (JSON) | Expected US FDA approval (or PDUFA) date as `{"year", "month"}`. |
+| `us_launch_timing` (+3) | TEXT (JSON) | Expected US launch date as `{"year", "month"}`. |
+| `eu_maa_submission_timing` (+3) | TEXT (JSON) | When the EU Marketing Authorisation Application is to be submitted, as `{"year", "month"}`; nulls when the deck says an MAA is planned without a date. |
+| `eu_ema_approval_timing` (+3) | TEXT (JSON) | Expected EU (EMA/EC) approval date as `{"year", "month": null}` (the spec parses the year only). |
+| `eu_launch_timing` (+3) | TEXT (JSON) | Expected EU launch date as `{"year", "month": null}`. |
+| `mode_of_administration_medicare_coverage` (+3) | TEXT | Route and setting of administration, as the expected Medicare coverage: `Inpatient (Medicare Part B)`, `Outpatient, HCP-administered (Medicare Part B)` or `Outpatient, patient-administered (Medicare Part D)`. Usually stated once for the product: the same value on every indication row. |
+
+"(+3)" means the field's `_confidence`, `_confidence_reason` and `_citations` columns follow it.
+
+### `ci`
+
+One row per competitor product and indication from the Competitive Intelligence deck. Only records the join could attach to a CDP indication are loaded; unmapped, duplicate and keyless records stay in the run's JSON and HTML.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `row_id` | INTEGER PK | Row id. |
+| `asset_id` | INTEGER → `asset`, not null | The asset. |
+| `indication_id` | INTEGER → `indication`, not null | The CDP indication the record was mapped to. |
+| `indication` | TEXT, not null | That indication's name. |
+| `competitor` (+3) | TEXT, not null | The competitor product as written (brand, or INN / code name). |
+| `ci_indication` | TEXT | The CI deck's own wording of the indication. |
+| `mapping_confidence` | TEXT | How surely `ci_indication` is this CDP indication (`high` / `medium` / `low`). |
+| `mapping_confidence_reason` | TEXT | Reason codes such as `indication_match_partial`, `indication_match_loose`, `indication_mapped_by_code`. |
+| `phase_of_development` (+3) | TEXT | The competitor's current phase in this indication: `Pre-clinical`, `Phase I`, `Phase II`, `Phase III`, `Launched`. |
+| `us_regulatory_approval_timing` (+3) | TEXT (JSON) | Expected or actual US FDA approval date as `{"year", "month": null}`. |
+| `us_generic_entry_timing` (+3) | TEXT (JSON) | Expected US generic or biosimilar entry (loss of exclusivity, patent expiry) as `{"year", "month": null}`. |
+
+### `protocol`
+
+One row per study and indication from the Trial Protocol Concept Sheet. Same loading rule as `ci`.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `row_id` | INTEGER PK | Row id. |
+| `asset_id` | INTEGER → `asset`, not null | The asset. |
+| `indication_id` | INTEGER → `indication`, not null | The CDP indication the study record was mapped to. |
+| `indication` | TEXT, not null | That indication's name. |
+| `study` (+3) | TEXT, not null | The study, by its number alone when it has one (e.g. `SYN-301`). |
+| `protocol_indication` | TEXT | The sheet's own wording of the indication. |
+| `mapping_confidence` | TEXT | How surely `protocol_indication` is this CDP indication. |
+| `mapping_confidence_reason` | TEXT | Reason codes as on `ci`. |
+| `clinical_trial_comparator_design` (+3) | TEXT | What the investigational arm is compared with: `Head-to-head`, `Placebo-controlled` or `Single-arm study`. |
+| `clinical_trial_comparator_type` (+3) | TEXT | For head-to-head designs, the kind of active comparator: `Fixed active comparator / treatment`, `Investigator's treatment choice`, `Best supportive care` or `Best available therapy`; null otherwise. |
+| `clinical_trial_blinding` (+3) | TEXT | `Open-label`, `Single-blind` or `Double-blind`. |
+| `alignment_of_stratification_factors` (+3) | TEXT | Whether randomization is stratified by clinical subpopulation factors: `Yes`, `No` or `Not Applicable` (not randomized). |
+| `subgroup_endpoints` (+3) | TEXT | Whether an endpoint is tested or powered within a subgroup: `Yes`, `No` or `Not Applicable`. |
+| `patient_centered_outcomes` (+3) | TEXT | Whether a primary or key secondary endpoint is patient-centred (survival, clinical events, symptoms, HRQoL / PROs): `Yes` / `No`. |
+
+### The value columns
+
+For every extracted field `<field>` on `cdp`, `ci` and `protocol` (and for `indication`, `competitor` and `study` themselves):
+
+| Column | Holds |
+|---|---|
+| `<field>` | The answer. A **date** field holds the parsed `{"year": 2031, "month": 5}` object exactly as the JSON wrote it (`month` null for a quarter or a year-only spec; both null when unreadable). A field with options holds the category text. Otherwise the value as written. When the file states more than one value (a conflict), a JSON **list** of all of them, the chosen one first. Null when the file did not give it. |
+| `<field>_confidence` | `high` / `medium` / `low`: the model's label, lowered by the local grounding checks when they fail; never raised. |
+| `<field>_confidence_reason` | The model's own reason, then in brackets the checks that lowered it and any other value the file states elsewhere: `[lowered by checks: ...; also stated: ... (p.N)]`. |
+| `<field>_citations` | JSON `{"citations": [{"page", "quote"}], "conflicts": [{"page", "quote", "value"}]}`: where the value was cited from (`page` is the deck's slide number) and, under `conflicts`, where each other stated value comes from. |
+
+The other sub-fields of a record (milestone, comparator, basis, the `pursuing_maa` wording) are not stored; they remain in the run's JSON and HTML.
+
+## Users and access
+
+### `role`
+
+Seeded on every start; three rows.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `code` | TEXT PK | `admin`, `editor` or `viewer`. |
+| `name` | TEXT, not null | Display name. |
+| `description` | TEXT, not null | What the role may do. |
+| `can_edit` | INTEGER, not null | 1 = may edit inputs, documents and indications (admin, editor). |
+| `can_see_users` | INTEGER, not null | 1 = may open User Management (admin, editor read-only). |
+| `can_manage_users` | INTEGER, not null | 1 = may add and change users and asset access (admin only). |
+| `position` | INTEGER, not null | Display order. |
+
+### `user`
+
+| Column | Type | Meaning |
+|---|---|---|
+| `user_id` | INTEGER PK | Row id. |
+| `name` | TEXT, not null | Display name, 1 to 80 characters. |
+| `email` | TEXT, unique, not null | Stored lowercase. |
+| `role_code` | TEXT → `role`, not null | The user's one role. |
+| `status` | TEXT, not null | `active`, `pending` (invited) or `inactive`. Only active users can sign in. |
+| `last_active_at` | TEXT | Last sign-in. |
+| `created_at` | TEXT, not null | Creation time. |
+| `created_by` | INTEGER → `user` | Who added the user. |
+
+### `user_asset`
+
+Which assets a user may open. Admins may open every asset without a row here. Primary key `(user_id, asset_id)`.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `user_id` | INTEGER → `user`, not null | The user. |
+| `asset_id` | INTEGER → `asset`, not null | The asset. |
+| `granted_by` | INTEGER → `user` | Who granted access. |
+| `granted_at` | TEXT, not null | When. |
+
+### `session`
+
+A sign-in token the API hands out. The token itself is never stored, only its SHA-256; sessions last 12 hours.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `token_hash` | TEXT PK | SHA-256 hex of the session token. |
+| `user_id` | INTEGER → `user`, not null | The signed-in user. |
+| `created_at` | TEXT, not null | Sign-in time. |
+| `expires_at` | TEXT, not null | `created_at` + 12 h. |
+
+### `audit_log`
+
+Events as short text: who, which asset, what. Never values.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `log_id` | INTEGER PK | Row id. |
+| `user_id` | INTEGER → `user` | The acting user. |
+| `asset_id` | INTEGER → `asset` | The asset concerned, or null for user events. |
+| `event` | TEXT, not null | E.g. `signed in`, `created asset SYN-101`, `added indication`, `uploaded <file> as CDP`, `ran extraction`, `set <input name>`, `added user <name>`. |
+| `at` | TEXT, not null | When. |
+
+## Documents
+
+### `file_type`
+
+Seeded on every start: the four upload slots of the Data Submission page.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `code` | TEXT PK | `CI`, `Protocol`, `CDP` or `Forecast`. |
+| `label` | TEXT, not null | Slot title (e.g. `Clinical Development Plan (CDP)`). |
+| `example` | TEXT, not null | Example file name shown in the slot. |
+| `formats` | TEXT, not null | Human-readable accepted formats. |
+| `accept` | TEXT (JSON), not null | List of accepted suffixes, e.g. `[".pdf", ".ppt", ".pptx"]`. |
+| `position` | INTEGER, not null | Slot order. |
+| `spec` | TEXT | The extraction spec that reads this type (`cdp`, `ci`, `protocol`); null for Forecast, which is recorded but never opened. |
+
+### `document`
+
+A file a user attached to an asset. The bytes are never kept (they go to the extraction and the temp copy is deleted). One file per primary slot: uploading another file with the same primary type replaces the old record. A re-extraction keeps the documents.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `document_id` | INTEGER PK | Row id. |
+| `asset_id` | INTEGER → `asset`, not null | The asset. |
+| `file_name` | TEXT, not null | Original file name. |
+| `size_bytes` | INTEGER, not null | Upload size. |
+| `suffix` | TEXT, not null | Lower-case extension, e.g. `.pptx`. |
+| `macro_enabled` | INTEGER, not null | 1 for `.xlsm`: flagged and never opened. |
+| `uploaded_by` | INTEGER → `user` | Who uploaded it. |
+| `uploaded_at` | TEXT, not null | When. |
+| `extracted_at` | TEXT | When an extraction last read it; cleared back to null when a document of the same type is replaced. |
+
+### `document_file_type`
+
+The types of a document (at least one). Primary key `(document_id, type_code)`.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `document_id` | INTEGER → `document`, not null | The document. |
+| `type_code` | TEXT → `file_type`, not null | A type. |
+| `position` | INTEGER, not null | 1 = the primary type, the slot the document is shown in. |
+
+## Inputs
+
+### `input`
+
+The catalogue of the business workbook's 59 inputs, 49 on the "Takeda Asset Inputs" sheet and 10 on "Competitor Inputs", plus one input of the UI that is not a workbook row (the asset's therapeutic area, the overview's filter; `workbook_row` null) (`internal\Input Fields 20261102.xlsm`, exported to `structx/specs/inputs.json` by `python testing\make_inputs.py`). Seeded on every start as an upsert keyed by `id`: ids stay put, changed rows update, inputs no longer listed are deleted. Not keyed by asset.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `input_id` | INTEGER PK | Row id; referenced by `input_option` and `input_value`. |
+| `id` | TEXT, unique, not null | Stable snake_case id, e.g. `us_launch_timing`; competitor-section ids start with `competitor_`. |
+| `name` | TEXT, not null | The workbook's label. Unique within a section. |
+| `category` | TEXT, not null | The workbook's grouping: `Asset Description`, `Clinical`, `Regulatory`, `HTA Insights`, `Forecast` or `Competitive Intelligence`. |
+| `section` | TEXT, not null | `asset` (the Takeda asset) or `competitor`. |
+| `level` | TEXT, not null | `asset` (one value per asset) or `indication` (one per indication, and per competitor in the competitor section). |
+| `kind` | TEXT, not null | How the UI edits it and the shape of the stored value: `select`, `multi_select`, `number`, `percent`, `year`, `year_month`, `series`, `series_eu`, `list`, `calc`. |
+| `source` | TEXT, not null | Which document answers it: `cdp`, `ci`, `protocol`, `forecast`; or `manual`, `calc`, `link`, `none`. |
+| `screen` | TEXT, not null | The page that owns the value, from the workbook's "Input UI Location": `submission` (Asset setup), `indications`, `assumptions` or `inputs`. |
+| `spec` | TEXT | For the 18 AI-extracted inputs, the spec (`cdp`, `ci`, `protocol`) whose table feeds it; else null. |
+| `field` | TEXT | The column of that spec's table copied into the value; null with `spec`. |
+| `required` | INTEGER, not null | 1 = the workbook says Required: the coverage strip counts it as missing when absent. |
+| `condition` | TEXT | For a Conditional input, the workbook's Note (e.g. "Required if the Expected USA YoY Market Share is not provided"); null otherwise. Shown, not evaluated. |
+| `expected` | TEXT, not null | The workbook's "expected value" cell. |
+| `source_text` | TEXT, not null | The workbook's "source" cell as written. |
+| `explanation` | TEXT | Helper text shown under the control. |
+| `policies` | TEXT (JSON), not null | The policies the input feeds, from `IRA`, `MFN`, `JCA`, `EU-GPL`. |
+| `unit` | TEXT | `%`, `USD`, `months`, or null. |
+| `workbook_row` | INTEGER | The row on the input's sheet (each sheet numbers its own rows; unique with `section`); null for an input that is not in the workbook. |
+
+### `input_option`
+
+The options of a `select` or `multi_select`, or the EU reference countries of a `series_eu`. Unique on `(input_id, value)`.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `option_id` | INTEGER PK | Row id. |
+| `input_id` | INTEGER → `input`, not null | The input. |
+| `position` | INTEGER, not null | Display order. |
+| `value` | TEXT, not null | The option text. |
+
+### `input_value`
+
+An asset's values for the inputs: one row per asset, input and, for indication-level inputs, indication (and competitor in the competitor section). Unique on `(asset_id, input_id, indication_id, competitor)` with nulls treated as 0 / empty. An extraction deletes every value row of its spec's inputs for the asset, user rows included, and writes fresh `ai_extracted` copies of the `cdp` / `ci` / `protocol` cells (for protocol the first study row of an indication wins; an asset-level input such as mode of administration is copied once from the first row, with no indication; a cell outside the input's range is skipped). The `cdp` / `ci` / `protocol` tables stay the untouched AI record while users edit here.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `value_id` | INTEGER PK | Row id. |
+| `asset_id` | INTEGER → `asset`, not null | The asset. |
+| `input_id` | INTEGER → `input`, not null | The input. |
+| `indication_id` | INTEGER → `indication` | The indication; null for an asset-level input. |
+| `competitor` | TEXT | The competitor name; null outside the competitor section. |
+| `value` | TEXT (JSON), not null | By kind: `select` the option string; `number` a number ≥ 0; `percent` 0–100; `year` 1900–2100; `year_month` `{"year", "month"}` (month 1–12 or null); `series` 15 numbers or nulls (years 1–15); `series_eu` `{country: [15 values]}` over the EU reference countries; `multi_select` a list of the chosen options. `list` and `calc` inputs are never stored. |
+| `source` | TEXT, not null | `cdp`, `ci` or `protocol` when copied from an extraction; `user` when entered or edited in the UI. |
+| `status` | TEXT, not null | `ai_extracted`, `entered` (a user filled an empty cell) or `edited` (a user changed an extracted value). |
+| `confidence` | TEXT | Copied from the spec table's `<field>_confidence`; null for user rows. |
+| `confidence_reason` | TEXT | Copied from `<field>_confidence_reason`; null for user rows. |
+| `citations` | TEXT (JSON) | Copied from `<field>_citations`; null for user rows. |
+| `document_id` | INTEGER → `document` | The document the extraction read; set to null when that document is removed. |
+| `user_id` | INTEGER → `user` | The user behind the value: who entered or edited it (`status` entered / edited), or who uploaded the document it was extracted from (`status` ai_extracted, `document.uploaded_by`); null only for an extraction with no document record (the raw `/cdp`, `/ci`, `/protocol` routes). |
+| `updated_at` | TEXT, not null | When the row was written. |
+
+## Indexes
+
+| Index | On | Purpose |
+|---|---|---|
+| `input_section_name` | `input (section, name)` | One input name per section. |
+| `input_option_value` | `input_option (input_id, value)` | No repeated option within an input. |
+| `input_value_key` | `input_value (asset_id, input_id, COALESCE(indication_id, 0), COALESCE(competitor, ''))` | One value per asset, input, indication and competitor. |
+
+The `-wal` and `-shm` files beside `structx.sqlite` are SQLite's write-ahead log; `init_db.py --fresh` removes them with the database.

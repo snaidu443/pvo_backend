@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from app import models
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine
-from app.schemas import AssetIn, DocumentIn, UserIn
+from app.schemas import AssetIn, UserIn
 
 
 def load(folder: Path, name: str):
@@ -77,11 +77,6 @@ def main() -> None:
             for asset_id in sorted(set(u.assetIds)):
                 if db.get(models.Asset, asset_id) is not None:
                     db.add(models.AssetAccess(user_id=u.id, asset_id=asset_id))
-
-        if db.scalar(select(func.count()).select_from(models.Document)) == 0:
-            for raw in load(folder, 'documents'):
-                d = DocumentIn.model_validate(raw)
-                db.add(models.Document(asset_id=d.assetId, data=d.model_dump(exclude_none=True, exclude={'id'})))
 
         for asset_id, trace in load(folder, 'decisionTraces').items():
             if db.get(models.Asset, asset_id) is not None and db.get(models.DecisionTrace, asset_id) is None:

@@ -1,13 +1,8 @@
 """Settings read from environment variables (prefix PVO_) or a local .env file."""
-import re
 from functools import lru_cache
-from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-_BUCKET = re.compile(r'^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$')
-_PREFIX = re.compile(r'^[a-z0-9][a-z0-9/_-]{0,99}$')
 
 
 class Settings(BaseSettings):
@@ -28,22 +23,17 @@ class Settings(BaseSettings):
     dev_login: bool = False
     dev_password: SecretStr = SecretStr('')
 
-    cors_origins: list[str] = []
-    upload_dir: str = './uploads'  # local storage only; keep it outside synced folders such as OneDrive
-    max_upload_bytes: int = 50 * 1024 * 1024  # per file; same limit as the React app
-    max_json_bytes: int = 2 * 1024 * 1024
-    # Data Submission (POST /assets/submissions): one request carries the set-up fields and every file.
-    max_files_per_submission: int = 20
-    max_files_per_type: int = 5
-    max_submission_bytes: int = 200 * 1024 * 1024
+    # The AI team's SQLite file (structx.sqlite). Read-only from this API. Empty = the /structx routes answer 503.
+    # Keep it outside synced folders such as OneDrive: a sync client can corrupt a live SQLite file.
+    # The AI team's database setup (init_db.py, its README) is in the structx_db/ folder; the extraction package is structx/.
+    structx_db_path: str = ''
 
-    # Where uploaded files are kept: 'local' (upload_dir) or 's3' (private, KMS-encrypted bucket).
-    # S3 credentials come from the AWS default chain (IAM role, or `aws sso login` locally); never from this file.
-    storage_backend: Literal['local', 's3'] = 'local'
-    s3_bucket: str = ''
-    s3_prefix: str = 'pvo/local'  # e.g. pvo/dev; fixed per environment (object key = prefix + '/' + stored key)
-    s3_kms_key_id: str = ''  # key id, ARN or alias of the customer-managed KMS key (an identifier, not a secret)
-    s3_region: str = ''
+    cors_origins: list[str] = []
+    # Where uploaded source documents are saved (<dir>/<asset code>/<file>). Empty = uploads answer 503. Keep it outside synced
+    # folders such as OneDrive, and make sure the platform's malware scanner covers it.
+    upload_dir: str = ''
+    max_upload_bytes: int = 50 * 1024 * 1024  # per file
+    max_json_bytes: int = 2 * 1024 * 1024
 
     @property
     def jwks_url(self) -> str:
@@ -59,15 +49,6 @@ class Settings(BaseSettings):
             raise RuntimeError('PVO_DEV_LOGIN is for local development only.')
         if self.dev_login and not self.dev_password.get_secret_value():
             raise RuntimeError('PVO_DEV_LOGIN=true needs PVO_DEV_PASSWORD (your local test password) in .env.')
-        if self.storage_backend == 's3':
-            if not _BUCKET.match(self.s3_bucket):
-                raise RuntimeError('PVO_S3_BUCKET must be a valid S3 bucket name.')
-            if not self.s3_kms_key_id:
-                raise RuntimeError('PVO_S3_KMS_KEY_ID is required: uploads are always encrypted with the KMS key.')
-            if not _PREFIX.match(self.s3_prefix) or '..' in self.s3_prefix:
-                raise RuntimeError('PVO_S3_PREFIX may only contain a-z, 0-9, "-", "_" and "/" (e.g. pvo/dev).')
-        if self.environment == 'prod' and self.storage_backend != 's3':
-            raise RuntimeError('Production stores documents in S3 (PVO_STORAGE_BACKEND=s3).')
         if self.environment == 'local':
             return
         if not self.okta_issuer.startswith('https://') or not self.okta_audience:

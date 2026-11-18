@@ -53,81 +53,10 @@ class AssetAccess(Base):
     asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id', ondelete='CASCADE'), primary_key=True)
 
 
-class Document(Timestamps, Base):
-    """One uploaded file. The file itself is in storage (local folder or S3); this row holds where and what it is."""
-    __tablename__ = 'documents'
-    __table_args__ = (
-        Index('ux_documents_storage_key', 'storage_key', unique=True),
-        Index('ux_documents_asset_sha256', 'asset_id', 'sha256', unique=True),  # the same file twice in one asset
-    )
-    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, 'sqlite'), primary_key=True, autoincrement=True)
-    asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id', ondelete='CASCADE'), index=True)
-    doc_type: Mapped[str | None] = mapped_column(String(20))  # CI | Protocol | CDP | Forecast (None on older rows)
-    seq: Mapped[int | None] = mapped_column(Integer)  # order within its document type
-    original_name: Mapped[str | None] = mapped_column(String(200))  # display only; never used as a path
-    content_type: Mapped[str | None] = mapped_column(String(120))  # from the checked file type, not the browser
-    storage_backend: Mapped[str] = mapped_column(String(10), default='local', server_default='local')  # local | s3
-    storage_key: Mapped[str | None] = mapped_column(String(300))  # relative key, e.g. assets/PVO-1A2B3C4D/<uuid>.pdf
-    storage_version_id: Mapped[str | None] = mapped_column(String(200))  # S3 object version
-    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
-    sha256: Mapped[str | None] = mapped_column(String(64))
-    scan_status: Mapped[str] = mapped_column(String(20), default='no_file')  # no_file | pending_scan | clean | infected | failed
-    uploaded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
-    data: Mapped[dict] = mapped_column(JsonDoc)  # SourceDocument (the React app's shape)
-
-
-class Field(Timestamps, Base):
-    __tablename__ = 'extracted_fields'
-    id: Mapped[str] = mapped_column(String(300), primary_key=True)
-    asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id', ondelete='CASCADE'), index=True)
-    data: Mapped[dict] = mapped_column(JsonDoc)  # ExtractedField
-
-
-class Question(Timestamps, Base):
-    __tablename__ = 'judgment_questions'
-    id: Mapped[str] = mapped_column(String(300), primary_key=True)
-    asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id', ondelete='CASCADE'), index=True)
-    data: Mapped[dict] = mapped_column(JsonDoc)  # JudgmentQuestion
-
-
 class DecisionTrace(Timestamps, Base):
     __tablename__ = 'decision_traces'
     asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id', ondelete='CASCADE'), primary_key=True)
     data: Mapped[dict] = mapped_column(JsonDoc)
-
-
-class SavedScenario(Base):
-    __tablename__ = 'saved_scenarios'
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id', ondelete='CASCADE'), index=True)
-    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    data: Mapped[dict] = mapped_column(JsonDoc)  # SavedScenario
-
-
-class AssessmentRun(Base):
-    """Eligibility / impact / extraction requests. The engines run in the browser today; this records them."""
-    __tablename__ = 'assessment_runs'
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id', ondelete='CASCADE'), index=True)
-    kind: Mapped[str] = mapped_column(String(20))  # eligibility | impact | extract
-    status: Mapped[str] = mapped_column(String(20), default='requested')
-    requested_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class ExtractionJob(Base):
-    """One "Extract data with AI" run for an asset. React polls it until it is done or failed."""
-    __tablename__ = 'extraction_jobs'
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id', ondelete='CASCADE'), index=True)
-    status: Mapped[str] = mapped_column(String(20), default='queued')  # queued | waiting_for_scan | running | done | failed
-    error: Mapped[str | None] = mapped_column(String(300))  # safe to show users; never a stack trace
-    fields_found: Mapped[int] = mapped_column(Integer, default=0)
-    requested_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Activity(Base):

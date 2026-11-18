@@ -14,7 +14,7 @@ from app.database import get_session_factory
 from app.extraction import apply_scan_result
 from app.main import app
 from app.storage import S3FileStorage, StorageError, check_key, get_storage
-from conftest import auth
+from conftest import auth, legacy_assets, legacy_documents
 
 ADMIN, EDITOR, VIEWER = auth('admin@example.test'), auth('editor@example.test'), auth('viewer@example.test')
 URL = '/api/assets/submissions'
@@ -83,7 +83,7 @@ def test_submission_saves_everything_and_waits_for_the_scan(client):
     keys = stored_keys(asset_id)
     assert len(keys) == 3 and all(re.fullmatch(r'assets/PVO-[0-9A-F]{8}/[0-9a-f]{32}\.(pptx|pdf|xlsx)', k) for k in keys)
 
-    mine = next(a for a in client.get('/api/assets', headers=EDITOR).json() if a['id'] == asset_id)
+    mine = next(a for a in legacy_assets() if a['id'] == asset_id)
     assert mine['workflowStatus'] == 'extracting'
     job = client.get(f'/api/assets/{asset_id}/extract/{job_id}', headers=EDITOR).json()
     assert job['status'] == 'waiting_for_scan'  # nothing is read before the malware scan
@@ -100,7 +100,7 @@ def test_submission_saves_everything_and_waits_for_the_scan(client):
 
     job = client.get(f'/api/assets/{asset_id}/extract/{job_id}', headers=EDITOR).json()
     assert job['status'] == 'done' and job['error'] is None
-    mine = next(a for a in client.get('/api/assets', headers=EDITOR).json() if a['id'] == asset_id)
+    mine = next(a for a in legacy_assets() if a['id'] == asset_id)
     assert mine['workflowStatus'] == 'inputs_review'
 
     first = client.get(f'/api/documents/{doc_id}/download', headers=EDITOR)
@@ -109,13 +109,10 @@ def test_submission_saves_everything_and_waits_for_the_scan(client):
     assert first.headers['content-type'].startswith('application/vnd.openxmlformats-officedocument.presentationml')
 
 
-def test_submitted_asset_can_be_saved_back_and_deleted(client):
+def test_submitted_asset_can_be_deleted(client):
     out = standard(client).json()
     asset_id = out['assetId']
-    asset = next(a for a in client.get('/api/assets', headers=EDITOR).json() if a['id'] == asset_id)
-    asset['workflowStatus'] = 'active'  # server-owned: accepted but ignored
-    saved = client.put(f'/api/assets/{asset_id}', json=asset, headers=EDITOR)
-    assert saved.status_code == 200 and saved.json()['workflowStatus'] == 'extracting'
+    assert any(a['id'] == asset_id for a in legacy_assets())
     assert client.delete(f'/api/assets/{asset_id}', headers=EDITOR).status_code == 204
     assert stored_keys(asset_id) == []  # the asset's files and folder are removed
 
@@ -129,7 +126,7 @@ def test_infected_file_is_removed_and_failed_extraction_can_be_retried(client):
     run_job(app.dependency_overrides[get_session_factory](), storage(), job_id)
     job = client.get(f'/api/assets/{asset_id}/extract/{job_id}', headers=EDITOR).json()
     assert job['status'] == 'failed' and 'malware scan' in job['error']
-    assert next(a for a in client.get('/api/assets', headers=EDITOR).json() if a['id'] == asset_id)['workflowStatus'] == 'extraction_failed'
+    assert next(a for a in legacy_assets() if a['id'] == asset_id)['workflowStatus'] == 'extraction_failed'
 
     assert client.post(f'/api/assets/{asset_id}/extract/retry', headers=VIEWER).status_code in (403, 404)
     again = client.post(f'/api/assets/{asset_id}/extract/retry', headers=EDITOR)
@@ -140,7 +137,7 @@ def test_unknown_scan_verdict_is_never_clean(client):
     out = submit(client, [('CI_Q3.pdf', pdf('ci'))], meta('CI')).json()
     (key,) = stored_keys(out['assetId'])
     scan(key, 'SOMETHING_NEW')
-    docs = [d for d in client.get('/api/documents', headers=EDITOR).json() if d['assetId'] == out['assetId']]
+    docs = [d for d in legacy_documents() if d['assetId'] == out['assetId']]
     assert docs[0]['scanStatus'] == 'failed'
 
 
@@ -173,10 +170,10 @@ def test_only_writers_with_access_can_submit_or_see_jobs(client):
     ([('CI.pdf', b'')], meta('CI'), 422),                                             # empty file
 ])
 def test_rejected_submissions_store_nothing(client, files, metadata, code):
-    before = len(client.get('/api/assets', headers=ADMIN).json())
+    before = len(legacy_assets())
     r = submit(client, files, metadata)
     assert r.status_code == code, r.text
-    assert len(client.get('/api/assets', headers=ADMIN).json()) == before
+    assert len(legacy_assets()) == before
     assert all_stored_files() == []
 
 

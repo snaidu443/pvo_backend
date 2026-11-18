@@ -11,8 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
-from .routers import activity, assessment, assets, auth, catalog, documents, health, inputs, submissions, users
-from .storage import get_storage
+from .routers import activity, assessment, assets, auth, catalog, documents, extraction, health, inputs, structx, structx_users, users
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s %(message)s')
 log = logging.getLogger('pvo')
@@ -34,13 +33,7 @@ def create_app() -> FastAPI:
         request_id = uuid.uuid4().hex[:12]
         request.state.request_id = request_id
         if request.method in ('POST', 'PUT', 'PATCH'):
-            path = request.url.path
-            if path.endswith('/assets/submissions'):
-                limit = settings.max_submission_bytes + 1024 * 1024  # all files of one Data Submission + form overhead
-            elif path.endswith('/documents'):
-                limit = settings.max_upload_bytes + 1024 * 1024
-            else:
-                limit = settings.max_json_bytes
+            limit = settings.max_upload_bytes + 1024 * 1024 if request.url.path.endswith('/documents') else settings.max_json_bytes
             length = request.headers.get('content-length')
             if length is None and request.headers.get('transfer-encoding'):
                 return JSONResponse({'detail': 'Content-Length is required.'}, status_code=411)
@@ -65,11 +58,8 @@ def create_app() -> FastAPI:
         log.exception('Unhandled error (request %s)', getattr(request.state, 'request_id', '-'))
         return JSONResponse({'detail': 'Something went wrong. Please try again.'}, status_code=500)
 
-    get_storage()  # fail at start-up, not on the first upload, if storage is misconfigured (e.g. boto3 missing for s3)
-
     app.include_router(health.router)
-    # submissions before assets, so POST /assets/submissions is never read as an asset id
-    for module in (auth, catalog, submissions, assets, documents, inputs, assessment, users, activity):
+    for module in (auth, catalog, assets, documents, extraction, inputs, assessment, users, activity, structx, structx_users):
         app.include_router(module.router, prefix=settings.api_prefix)
     if settings.dev_login:  # config.check() has already refused this outside local
         from . import devauth

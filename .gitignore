@@ -1,11 +1,6 @@
-.venv/
-venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-.env
-*.db
-uploads/
-*.db-shm
-*.db-wal
-*.db.bak-*
+# The API's SQLite database lives here (STRUCTX_DATABASE_URL=sqlite:///db/structx.sqlite).
+# It holds deck content: never committed. Only this file, init_db.py and README.md are tracked.
+*
+!.gitignore
+!init_db.py
+!README.md

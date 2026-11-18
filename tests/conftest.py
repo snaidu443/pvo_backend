@@ -13,6 +13,7 @@ os.environ.update({  # before the app is imported (settings are read once)
     'PVO_OKTA_AUDIENCE': 'api://pvo-test',
     'PVO_OKTA_CLIENT_ID': '',
     'PVO_DEV_LOGIN': 'false',
+    'PVO_STRUCTX_DB_PATH': '',  # tests never read the real structx.sqlite named in a developer's .env
     'PVO_DEV_PASSWORD': secrets.token_urlsafe(16),  # random per run; no password is stored in the tests
 })
 
@@ -24,11 +25,12 @@ from sqlalchemy import create_engine, event  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
+from sqlalchemy import select  # noqa: E402
+
 from app import models  # noqa: E402
-from app.database import Base, get_db, get_session_factory  # noqa: E402
+from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.security import TokenVerifier, get_verifier  # noqa: E402
-from app.storage import LocalFileStorage, get_storage  # noqa: E402
 
 ISSUER, AUDIENCE = os.environ['PVO_OKTA_ISSUER'], os.environ['PVO_OKTA_AUDIENCE']
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -49,7 +51,7 @@ def auth(sub: str, **overrides) -> dict:
 def asset_json(asset_id: str, code: str | None = None, **extra) -> dict:
     """A minimal valid Asset (synthetic)."""
     return {
-        'id': asset_id, 'assetCode': code or asset_id, 'assetName': f'{asset_id} demo', 'therapeuticArea': 'Oncology', 'stage': 'Phase 3',
+        'id': asset_id, 'assetCode': code or asset_id, 'assetName': f'{asset_id} demo', 'stage': 'Phase 3',
         'jurisdictions': ['US'], 'policyExposures': ['IRA'], 'submissionStatus': 'Complete', 'submissionCompleteness': 100,
         'eligibilityStatus': '', 'businessContextStatus': '', 'impactStatus': '', 'owner': 'Demo Admin', 'lastUpdatedAt': '04 Nov 2026',
         'estimatedImpactLevel': '', 'estimatedAtRisk': 0, 'estimatedOpportunity': 0, 'recommendationStatus': '', 'governanceAlerts': 0,
@@ -90,9 +92,17 @@ def client(tmp_path):
 
     public = KEY.public_key()
     app.dependency_overrides[get_db] = _db
-    app.dependency_overrides[get_session_factory] = lambda: Session  # background extraction jobs
     app.dependency_overrides[get_verifier] = lambda: TokenVerifier(ISSUER, AUDIENCE, '', 'pvo.api', lambda _token: public)
-    app.dependency_overrides[get_storage] = lambda: LocalFileStorage(tmp_path / 'uploads')
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+def legacy_assets() -> list[dict]:
+    """The app's own asset rows (they only carry user access grants now; the asset data is in structx.sqlite)."""
+    gen = app.dependency_overrides[get_db]()
+    db = next(gen)
+    try:
+        return [{**a.data, 'workflowStatus': a.status} for a in db.scalars(select(models.Asset))]
+    finally:
+        gen.close()

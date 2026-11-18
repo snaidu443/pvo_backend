@@ -1,6 +1,6 @@
 """Creates the API's SQLite database: its five asset tables, empty (asset,
-indication, cdp, ci, protocol, generated from specs/*.json), the user
-tables (roles seeded) and the input tables seeded from specs/inputs.json, at the path STRUCTX_DATABASE_URL names in .env (default
+indication, cdp, ci, protocol, generated from structx/specs/*.json), the user
+tables (roles seeded) and the input tables seeded from structx/specs/inputs.json, at the path STRUCTX_DATABASE_URL names in .env (default
 sqlite:///db/structx.sqlite, relative to the project folder). Run from the
 project folder:
 

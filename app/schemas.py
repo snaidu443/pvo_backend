@@ -35,7 +35,6 @@ class AssetIn(Strict):
     assetCode: S40
     assetName: S200
     legacyAlias: S200 | None = None
-    therapeuticArea: S80
     stage: S60
     jurisdictions: Annotated[list[S20], Field(max_length=10)]
     policyExposures: Annotated[list[PolicyCode], Field(max_length=4)]
@@ -61,75 +60,6 @@ class AssetIn(Strict):
     workflowStatus: S20 | None = None  # server-owned (see Asset.status); accepted so a GET can be saved back, then ignored
     assessments: Annotated[list[dict[str, Any]], Field(max_length=200)] | None = None
     aia: dict[str, Any] | None = None
-
-
-class FieldHistoryIn(Strict):
-    time: S40
-    who: S60
-    text: S300
-
-
-class FieldIn(Strict):
-    id: RecordId
-    assetId: AssetId
-    gen: bool | None = None
-    group: S200
-    field: S200
-    value: S2000
-    alternate: S2000 | None = None
-    prev: S2000 | None = None
-    confidence: S20
-    source: S300
-    feeds: Annotated[list[S20], Field(max_length=10)]
-    status: S40
-    history: Annotated[list[FieldHistoryIn], Field(max_length=500)] | None = None
-    indId: S40 | None = None
-    confirmedBy: S60 | None = None
-
-
-class QuestionIn(Strict):
-    id: RecordId
-    assetId: AssetId
-    gen: bool | None = None
-    group: S200
-    text: S2000
-    options: Annotated[list[S200], Field(max_length=30)] | None = None
-    perIndication: bool | None = None
-    ai: S2000
-    answer: S200
-    answers: dict[S40, S200] | None = None
-    evidence: S4000
-    source: S300
-    confidence: S20
-    policies: Annotated[list[PolicyCode], Field(max_length=4)]
-    confirmedBy: S60 | None = None
-
-
-class NewAssetIn(Strict):
-    """POST /assets: the asset plus its starter records (assetService.create in the React app)."""
-    asset: AssetIn
-    fields: Annotated[list[FieldIn], Field(max_length=3000)] = []
-    questions: Annotated[list[QuestionIn], Field(max_length=500)] = []
-    trace: dict[str, Any] | None = None
-
-
-class DocumentIn(Strict):
-    id: int | None = None  # the browser's temporary id; the server assigns the real one on upload
-    assetId: AssetId
-    name: Annotated[str, StringConstraints(min_length=1, max_length=200)]
-    size: S40
-    type: S60
-    types: Annotated[list[S60], Field(max_length=10)] | None = None
-    scope: S60
-    version: S60
-    tag: S60
-    slideRef: S60 | None = None
-    linkedDocId: int | None = None
-    pages: S60
-    added: S40
-    addedStamp: S40 | None = None
-    competitor: bool | None = None
-    scanStatus: S20 | None = None  # server-owned; accepted so a GET can be saved back, then ignored
 
 
 class UserIn(Strict):
@@ -173,20 +103,6 @@ class CopilotIn(Strict):
 DocType = Literal['CI', 'Protocol', 'CDP', 'Forecast']
 YesNo = Literal['Yes', 'No']
 # Same options as the React Data Submission form (src/engine/constants.ts, src/engine/inputCatalogue.ts).
-TherapeuticArea = Literal['Oncology', 'Rare hematology', 'Immunology', 'Cell therapy', 'Neuroscience', 'Metabolic disease', 'Other']
 Modality = Literal['Small molecule', 'Biologic (other)', 'Biologic – plasma-derived', 'CGT']
 
 
-class SubmissionDocIn(Strict):
-    docType: DocType
-
-
-class SubmissionIn(Strict):
-    """`metadata` part of POST /assets/submissions. `documents[i]` describes the i-th `files` part."""
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40, pattern=r'^[^\x00-\x1f\x7f]+$')]
-    area: TherapeuticArea | None = None
-    modality: Modality
-    jcaInsights: YesNo | None = None
-    regStrategy: YesNo | None = None
-    euAccess: YesNo | None = None
-    documents: Annotated[list[SubmissionDocIn], Field(min_length=1, max_length=100)]
